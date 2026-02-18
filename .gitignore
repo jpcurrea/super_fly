@@ -1,0 +1,5 @@
+*.pickle
+*.mp4
+*_labeled.mp4
+*.ini
+*.pyc
