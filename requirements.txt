@@ -1,0 +1,24 @@
+# Core ML and Data Science
+deeplabcut
+numpy
+pandas
+scipy
+matplotlib
+
+# GUI and Visualization
+PyQt6
+pyqtgraph
+napari
+
+# Video Processing
+scikit-video
+
+# Jupyter/IPython (for test scripts)
+ipywidgets
+IPython
+
+# Experiment Tracking
+wandb
+
+# Configuration
+PyYAML
