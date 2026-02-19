@@ -171,6 +171,7 @@ class MainWindow(QWidget):
         self.config_loaded = False  # Track if config.yaml is loaded
         self.config_path = None
         self.batch_process = False
+        self.night_mode = True  # Start in night mode
         self.init_ui()
         self.init_menu()
         self.project = None
@@ -321,9 +322,9 @@ class MainWindow(QWidget):
         self.format_dropdown.setMinimumWidth(button_min_width)
         self.formats = [".mp4", ".avi", ".mov", ".mpeg", ".mat"]
         self.format_dropdown.addItems(self.formats)
-        format_label = QLabel("Format:")
-        format_label.setStyleSheet("color: white;")
-        button_vlayout.addWidget(format_label)
+        self.format_label = QLabel("Format:")
+        self.format_label.setStyleSheet("color: white;")
+        button_vlayout.addWidget(self.format_label)
         button_vlayout.addWidget(self.format_dropdown)
 
         # Export options table with checkboxes
@@ -351,8 +352,8 @@ class MainWindow(QWidget):
 
         # Add pcutoff slider and input at the bottom of export options
         pcutoff_layout = QHBoxLayout()
-        pcutoff_label = QLabel('p-cutoff:')
-        pcutoff_label.setStyleSheet("color: white; margin-right: 4px;")
+        self.pcutoff_label = QLabel('p-cutoff:')
+        self.pcutoff_label.setStyleSheet("color: white; margin-right: 4px;")
         self.pcutoff_edit = QLineEdit()
         self.pcutoff_edit.setText("0.6")
         self.pcutoff = 0.6
@@ -360,9 +361,19 @@ class MainWindow(QWidget):
         validator.setNotation(QDoubleValidator.Notation.StandardNotation)
         self.pcutoff_edit.setValidator(validator)
         self.pcutoff_edit.editingFinished.connect(self._on_pcutoff_edit)
-        pcutoff_layout.addWidget(pcutoff_label)
+        pcutoff_layout.addWidget(self.pcutoff_label)
         pcutoff_layout.addWidget(self.pcutoff_edit)
         export_layout.addLayout(pcutoff_layout, len(export_options)+1, 0)
+
+        # Add night mode toggle
+        night_mode_layout = QHBoxLayout()
+        self.night_mode_checkbox = QCheckBox('Night Mode')
+        self.night_mode_checkbox.setChecked(True)
+        self.night_mode_checkbox.setStyleSheet("color: white;")
+        self.night_mode_checkbox.stateChanged.connect(self.toggle_night_mode)
+        night_mode_layout.addWidget(self.night_mode_checkbox)
+        export_layout.addLayout(night_mode_layout, len(export_options)+2, 0)
+
         export_group.setLayout(export_layout)
 
         button_vlayout.addWidget(export_group)
@@ -371,6 +382,7 @@ class MainWindow(QWidget):
         # Restore button_column frame and layout
         self.button_column = QFrame()
         self.button_column.setFixedWidth(180)
+        self.button_column.setStyleSheet("background-color: #2a2a2a;")
         button_column_layout = QVBoxLayout(self.button_column)
         button_column_layout.setContentsMargins(8, 8, 8, 8)
         button_column_layout.addLayout(button_vlayout)
@@ -451,10 +463,10 @@ class MainWindow(QWidget):
         self.import_progress.setValue(0)
         self.import_progress.setTextVisible(True)
         self.import_progress.setFormat("%p%")
-        import_label = QLabel("Import Progress:")
-        import_label.setStyleSheet("color: white; padding-right: 8px;")
+        self.import_label = QLabel("Import Progress:")
+        self.import_label.setStyleSheet("color: white; padding-right: 8px;")
         import_bar_layout = QHBoxLayout()
-        import_bar_layout.addWidget(import_label)
+        import_bar_layout.addWidget(self.import_label)
         import_bar_layout.addWidget(self.import_progress)
         import_bar_layout.setStretch(0, 0)
         import_bar_layout.setStretch(1, 1)
@@ -465,10 +477,10 @@ class MainWindow(QWidget):
         self.video_progress.setValue(0)
         self.video_progress.setTextVisible(True)
         self.video_progress.setFormat("%p%")
-        video_label = QLabel("Video Progress:")
-        video_label.setStyleSheet("color: white; padding-right: 8px;")
+        self.video_label = QLabel("Video Progress:")
+        self.video_label.setStyleSheet("color: white; padding-right: 8px;")
         video_bar_layout = QHBoxLayout()
-        video_bar_layout.addWidget(video_label)
+        video_bar_layout.addWidget(self.video_label)
         video_bar_layout.addWidget(self.video_progress)
         video_bar_layout.setStretch(0, 0)
         video_bar_layout.setStretch(1, 1)
@@ -490,6 +502,45 @@ class MainWindow(QWidget):
         self.setLayout(main_layout)
         self.setWindowTitle("PyQt6 GUI Shell")
         self.resize(1100, 700)
+        
+        # Set initial background colors for night mode
+        self.setStyleSheet("background-color: #1e1e1e;")
+
+    def toggle_night_mode(self):
+        """Toggle between night mode (white text) and day mode (black text)."""
+        self.night_mode = self.night_mode_checkbox.isChecked()
+        color = "white" if self.night_mode else "black"
+        
+        # Set background colors
+        if self.night_mode:
+            main_bg = "#1e1e1e"  # Dark gray for main window
+            frame_bg = "#333333"  # Slightly lighter dark gray for frames
+            button_bg = "#2a2a2a"  # Dark gray for button column
+        else:
+            main_bg = "#e0e0e0"  # Light gray for main window
+            frame_bg = "#f5f5f5"  # Very light gray for frames
+            button_bg = "#d0d0d0"  # Medium light gray for button column
+        
+        # Update background colors
+        self.setStyleSheet(f"background-color: {main_bg};")
+        self.left_frame.setStyleSheet(f"background-color: {frame_bg};")
+        self.right_frame.setStyleSheet(f"background-color: {frame_bg};")
+        self.button_column.setStyleSheet(f"background-color: {button_bg};")
+        
+        # Update all text colors
+        self.format_label.setStyleSheet(f"color: {color};")
+        self.pcutoff_label.setStyleSheet(f"color: {color}; margin-right: 4px;")
+        self.import_label.setStyleSheet(f"color: {color}; padding-right: 8px;")
+        self.video_label.setStyleSheet(f"color: {color}; padding-right: 8px;")
+        self.notification_label.setStyleSheet(f"color: {color}; padding: 4px;")
+        self.night_mode_checkbox.setStyleSheet(f"color: {color};")
+        
+        # Update export checkboxes
+        for cb in self.export_checkboxes.values():
+            cb.setStyleSheet(f"color: {color};")
+        
+        mode_name = "Night Mode" if self.night_mode else "Day Mode"
+        self.set_notification(f"Switched to {mode_name}")
 
     def abort_operation(self):
         """Set abort flag to True to interrupt processing."""
