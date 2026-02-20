@@ -3,6 +3,8 @@ import traceback
 import re
 import deeplabcut
 import os
+from procrustean_analysis import get_angles_procrustes
+import pandas as pd
 
 # Usage: python dlc_worker.py <config_path> <video_path> <output_dir>
 
@@ -13,8 +15,9 @@ def main():
         config_path = sys.argv[1]
         video_paths = sys.argv[2:batch_idx]
         save_as_csv = sys.argv[batch_idx+1].lower() == 'true'
-        pcutoff = float(sys.argv[batch_idx+2]) if len(sys.argv) > batch_idx+2 else 0.6
-        overwrite = sys.argv[batch_idx+3].lower() == 'true' if len(sys.argv) > batch_idx+3 else False
+        get_angles = sys.argv[batch_idx+2].lower() == 'true'
+        pcutoff = float(sys.argv[batch_idx+3]) if len(sys.argv) > batch_idx+3 else 0.6
+        overwrite = sys.argv[batch_idx+4].lower() == 'true' if len(sys.argv) > batch_idx+4 else False
         failed = []
         try:
             print(f"[DLC Worker] Batch analyzing {len(video_paths)} videos")
@@ -48,19 +51,41 @@ def main():
         else:
             sys.exit(0)
     # Single file mode (legacy)
-    if len(sys.argv) < 6:
-        # print("Usage: python dlc_worker.py <config_path> <video_path> <output_dir> <save_as_csv> <make_labeled_video> <pcutoff> <overwrite>", file=sys.stderr)
-        print("Usage: python dlc_worker.py <config_path> <video_path> <output_dir> <save_as_csv> <make_labeled_video> <pcutoff> <overwrite>")
+    if len(sys.argv) < 7:
+        # print("Usage: python dlc_worker.py <config_path> <video_path> <output_dir> <save_as_csv> <get_angles> <make_labeled_video> <pcutoff> <overwrite>", file=sys.stderr)
+        # example usage: python dlc_worker.py ./SuperFly-Pablo-2025-07-29/config.yaml C:\Users\johnp\OneDrive\Desktop\smellovision\old\healthy_fly_exp\demo\2025_09_11_16_12_21_01.mp4 C:\Users\johnp\OneDrive\Desktop\smellovision\old\healthy_fly_exp\demo\ False True False .6 True
+        print("Usage: python dlc_worker.py <config_path> <video_path> <output_dir> <save_as_csv> <get_angles> <make_labeled_video> <pcutoff> <overwrite>")
         sys.exit(1)
     config_path = sys.argv[1]
     video_path = sys.argv[2]
     output_dir = sys.argv[3]
     save_as_csv = sys.argv[4].lower() == 'true'
-    make_labeled_video = sys.argv[5].lower() == 'true'
-    pcutoff = float(sys.argv[6]) if len(sys.argv) > 6 else 0.6
-    overwrite = sys.argv[7].lower() == 'true' if len(sys.argv) > 7 else False
+    get_angles = sys.argv[5].lower() == 'true'
+    make_labeled_video = sys.argv[6].lower() == 'true'
+    pcutoff = float(sys.argv[7]) if len(sys.argv) > 7 else 0.6
+    overwrite = sys.argv[8].lower() == 'true' if len(sys.argv) > 8 else False
     try:
         print(f"[DLC Worker] Starting analysis for {video_path}")
+        # check if there's already an output for this file by looking for files with the same basename that end in .h5
+        output_fns = [fn for fn in os.listdir(output_dir) if fn.endswith('.h5')]
+        basename = os.path.basename(video_path).split(".")[0]
+        old_fn = None
+        other_fns = []
+        for fn in output_fns:
+            if basename in fn and 'DLC_Resnet' in fn:
+                old_fn = fn
+                # and find others that contain THIS basename
+                old_basename = os.path.basename(old_fn).split(".")[0]
+                for fn in os.listdir(output_dir):
+                    if old_basename in fn and fn != old_fn:
+                        other_fns.append(fn)
+                break
+        # if so, delete it
+        if overwrite and old_fn is not None:
+            os.remove(os.path.join(output_dir, old_fn))
+            for fn in other_fns:
+                os.remove(os.path.join(output_dir, fn))
+        # analyze
         deeplabcut.analyze_videos(
             config_path,
             [video_path],
@@ -68,7 +93,6 @@ def main():
             destfolder=output_dir,
             save_as_csv=save_as_csv,
             batchsize=1,
-            use_shelve=True
         )
         print(f"[DLC Worker] Analysis complete for {video_path}")
         if make_labeled_video:
@@ -82,6 +106,27 @@ def main():
                 fastmode=True
             )
             print(f"[DLC Worker] Labeled video created for {video_path}")
+        if get_angles:
+            output_fns = [fn for fn in os.listdir(output_dir) if fn.endswith('.h5')]
+            basename = os.path.basename(video_path).split(".")[0]
+            old_fn = None
+            for fn in output_fns:
+                if basename in fn and 'DLC_Resnet' in fn:
+                    old_fn = fn
+                    break
+            if old_fn is not None:
+                h5_file = os.path.join(output_dir, old_fn)
+                df = pd.read_hdf(h5_file)
+                # the dataframe columns have 3 levels. get subset by the first
+                first_key = df.keys()[0][0]
+                centers, angles = get_angles_procrustes(df[first_key])
+                # add the body angles to the dataframe
+                df['body_angle'] = angles
+                df['body_x'] = centers[:, 0]
+                df['body_y'] = centers[:, 1]
+                # and save
+                df.to_hdf(h5_file, key='df', mode='w')
+                print(f"[DLC Worker] Angles for {video_path}: {angles}")
         sys.exit(0)
     except Exception as e:
         print(f"[DLC Worker] ERROR: {e}", file=sys.stderr)

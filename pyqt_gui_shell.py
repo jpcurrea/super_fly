@@ -3,6 +3,7 @@
 # === PyQt6 Threading Imports ===
 from glob import glob
 from PyQt6.QtCore import QThread, pyqtSignal
+from procrustean_analysis import get_angles_procrustes
 
 
 class DLCProcessWorker(QThread):
@@ -12,22 +13,39 @@ class DLCProcessWorker(QThread):
     update_file_list_signal = pyqtSignal()
     progress_update = pyqtSignal(int)  # percentage of files processed
 
-    def __init__(self, imported_files, processed_files, config_path, save_as_csv, make_labeled_video, pcutoff, overwrite, parent=None, batch_process=False):
+    def __init__(self, imported_files, processed_files, config_path, save_as_csv, get_angles, make_labeled_video, pcutoff, overwrite, parent=None, batch_process=False):
         super().__init__(parent)
         self.batch_process = batch_process
         self.imported_files = imported_files.copy()
         self.processed_files = processed_files.copy()
         self.config_path = config_path
         self.save_as_csv = save_as_csv
+        self.get_angles = get_angles
         self.make_labeled_video = make_labeled_video
         self.pcutoff = pcutoff
         self.overwrite = overwrite
         self._abort = False
+        
+        # Setup log file
+        import os
+        import datetime
+        self.log_dir = os.path.join(os.path.dirname(__file__), 'dlc_logs')
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir)
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.log_file = os.path.join(self.log_dir, f'dlc_processing_{timestamp}.log')
+
+    def _log(self, message):
+        """Write message to log file and console"""
+        with open(self.log_file, 'a') as f:
+            f.write(message + '\n')
+        print(message)
 
     def run(self):
         self._abort = False
         import subprocess, sys, os, time, traceback
         worker_script = os.path.join(os.path.dirname(__file__), "dlc_worker.py")
+        self._log(f"DLC Processing started. Log file: {self.log_file}")
         files_to_process = self.imported_files[:]
         failed_files = []
         attempt = 1
@@ -37,7 +55,7 @@ class DLCProcessWorker(QThread):
             if self.batch_process:
                 self.update_notification.emit(f"Batch attempt {attempt}: analyzing {len(files_to_process)} files...")
                 result = subprocess.run([
-                    sys.executable, worker_script, self.config_path, *files_to_process, "--batch", str(self.save_as_csv), str(self.pcutoff), str(self.overwrite)
+                    sys.executable, worker_script, self.config_path, *files_to_process, "--batch", str(self.save_as_csv), str(self.get_angles), str(self.pcutoff), str(self.overwrite)
                 ], capture_output=True, text=True)
                 # Parse output for failed files (assume worker prints a line for each failed file)
                 failed_files = []
@@ -71,9 +89,13 @@ class DLCProcessWorker(QThread):
                         self.update_file_list_signal.emit()
                         time.sleep(0.05)
                     for fn in failed_files:
-                        msg = f"Error processing {fn}: see log. Will retry."
+                        msg = f"Error processing {fn}: see {self.log_file}. Will retry."
                         self.file_processed.emit(fn, False, msg)
                         self.update_notification.emit(msg)
+                        # Log the error details
+                        self._log(f"\n=== Error for {fn} ===")
+                        self._log(f"STDOUT:\n{result.stdout}")
+                        self._log(f"STDERR:\n{result.stderr}")
                 if not failed_files or len(failed_files) == len(files_to_process):
                     # No progress or all failed, stop to avoid infinite loop
                     self.update_notification.emit("No progress made or all files failed. Stopping batch retries.")
@@ -109,7 +131,7 @@ class DLCProcessWorker(QThread):
                         output_dir = os.path.dirname(video_file)
                         result = subprocess.run([
                             sys.executable, worker_script, self.config_path, video_file, output_dir, 
-                            str(self.save_as_csv).lower(), str(self.make_labeled_video).lower(), str(self.pcutoff).lower(), str(self.overwrite).lower()
+                            str(self.save_as_csv).lower(), str(self.get_angles).lower(), str(self.make_labeled_video).lower(), str(self.pcutoff).lower(), str(self.overwrite).lower()
                         ], capture_output=True, text=True)
                         if result.returncode == 0:
                             if video_file in self.imported_files:
@@ -120,7 +142,10 @@ class DLCProcessWorker(QThread):
                             percent = int(100 * len(self.processed_files) / total_files) if total_files > 0 else 100
                             self.progress_update.emit(percent)
                         else:
-                            self.update_notification.emit(f"Error processing {video_file}: see log.")
+                            self._log(f"\n=== Error for {video_file} ===")
+                            self._log(f"STDOUT:\n{result.stdout}")
+                            self._log(f"STDERR:\n{result.stderr}")
+                            self.update_notification.emit(f"Error processing {video_file}: see {self.log_file}.")
 
     def abort(self):
         self._abort = True
@@ -331,10 +356,11 @@ class MainWindow(QWidget):
         export_options = [
             ('.csv per file', False),
             ('.h5 per file', True),
-            ('.h5 combined', True),
+            ('.h5 combined', False),
             ('.mat combined', False),
             ('.mp4 preview', False),
             ('rerun', False),
+            ('get angles', True),
             ('batch analysis', False)
         ]
         self.export_checkboxes = {}
@@ -671,15 +697,15 @@ class MainWindow(QWidget):
                     h5_files.sort(key=os.path.getmtime)
                     points_fn = h5_files[-1]
             # if the config is loaded, grab the list of parts in the right order
-            self.parts = None
-            if self.config_loaded:
-                # import the config file and get the list of parts
-                import yaml
-                with open(self.config_path, 'r') as f: 
-                    self.config = yaml.safe_load(f)
-                    if 'bodyparts' in self.config:
-                        self.parts = self.config['bodyparts']
-            self.tracker_preview = TrackerPreview(abs_path, points_fn, parts=self.parts)
+            # self.parts = None
+            # if self.config_loaded:
+            #     # import the config file and get the list of parts
+            #     import yaml
+            #     with open(self.config_path, 'r') as f: 
+            #         self.config = yaml.safe_load(f)
+            #         if 'bodyparts' in self.config:
+            #             self.parts = self.config['bodyparts']
+            self.tracker_preview = TrackerPreview(abs_path, points_fn)
             self.tracker_preview.show()
             self.set_notification(f"Previewing: {abs_path}")
             return
@@ -912,16 +938,18 @@ class MainWindow(QWidget):
         pcutoff = self.pcutoff
         overwrite = self.option_checked('rerun')
         batch_process = self.option_checked('batch analysis')
+        get_angles = self.option_checked('get angles')
 
         self.worker = DLCProcessWorker(
             self.imported_files,
             self.processed_files,
             self.config_path,
             save_as_csv,
+            get_angles,
             make_labeled_video,
             pcutoff,
             overwrite,
-            batch_process=batch_process
+            batch_process=batch_process,
         )
         self.worker.file_processed.connect(self.on_file_processed)
         self.worker.update_lists.connect(self.on_update_lists)

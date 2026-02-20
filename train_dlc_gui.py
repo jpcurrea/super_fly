@@ -285,11 +285,11 @@ class TrainDLCGui(QWidget):
             self.table.setItem(i, 3, model_item)
 
 if __name__ == "__main__":
-    # if len(sys.argv) < 2:
-    #     print("Usage: python train_dlc_gui.py <config_path>")
-    #     sys.exit(1)
-    # config_path = sys.argv[1]
-    config_path = "C:\\Users\\johnp\\OneDrive\\Desktop\\smellovision\\visuo_olfactory_tracking_w_bar_exp\\dlc\\super_fly_videos\\SuperFly-Pablo-2025-07-29\\config.yaml"
+    if len(sys.argv) < 2:
+        print("Usage: python train_dlc_gui.py <config_path>")
+        sys.exit(1)
+    config_path = sys.argv[1]
+    # config_path = "C:\\Users\\johnp\\OneDrive\\Desktop\\smellovision\\visuo_olfactory_tracking_w_bar_exp\\dlc\\super_fly_videos\\SuperFly-Pablo-2025-07-29\\config.yaml"
     app = QApplication(sys.argv)
     window = TrainDLCGui(config_path)
     window.show()
