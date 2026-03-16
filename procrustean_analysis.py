@@ -214,10 +214,10 @@ class AngularKalmanFilter():
     For flies with active control, use low or zero damping (0-5 Hz).
     For passive coasting, use higher damping (10-50 Hz).
     '''
-    def __init__(self, damping_coefficient=0.0, sampling_interval=1/30.0,
+    def __init__(self, damping_coefficient=0.0, fps=60.0,
                  measurement_noise_deg=5.0, process_noise_scale=1.0):
         self.damping_coefficient = damping_coefficient
-        self.dt = sampling_interval
+        self.dt = 1.0 / fps
         self.measurement_noise = np.deg2rad(measurement_noise_deg)
         self.process_noise_scale = process_noise_scale
         
@@ -329,7 +329,7 @@ class AngularKalmanFilter():
 
 
 def get_filtered_angles(data, parts=body_parts, top_anchor='neck', bottom_anchor='tail_joint',
-                       sampling_interval=1/30.0, optimize_params=True,
+                       fps=30.0, optimize_params=True,
                        damping_coefficient=None, measurement_noise_deg=None, process_noise_scale=None,
                        max_time_constant_ms=100.0, verbose=False):
     """
@@ -343,8 +343,8 @@ def get_filtered_angles(data, parts=body_parts, top_anchor='neck', bottom_anchor
         Body parts to use for angle calculation
     top_anchor, bottom_anchor : str or list
         Anchor points for orientation
-    sampling_interval : float
-        Time between frames in seconds (1/fps)
+    fps : float
+        Video framerate in frames per second (default: 30.0)
     optimize_params : bool
         If True, automatically optimize Kalman filter parameters
     damping_coefficient : float or None
@@ -378,6 +378,9 @@ def get_filtered_angles(data, parts=body_parts, top_anchor='neck', bottom_anchor
     
     # Convert to degrees for filtering
     angles_raw_deg = np.rad2deg(angles_raw)
+    
+    # Compute sampling interval from fps
+    sampling_interval = 1.0 / fps
     
     # Apply Kalman filter if requested
     if optimize_params or damping_coefficient is not None:
