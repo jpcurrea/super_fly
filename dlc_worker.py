@@ -3,7 +3,7 @@ import traceback
 import re
 import deeplabcut
 import os
-from procrustean_analysis import get_angles_procrustes
+from procrustean_analysis import *
 import pandas as pd
 
 # Usage: python dlc_worker.py <config_path> <video_path> <output_dir>
@@ -119,14 +119,60 @@ def main():
                 df = pd.read_hdf(h5_file)
                 # the dataframe columns have 3 levels. get subset by the first
                 first_key = df.keys()[0][0]
-                centers, angles = get_angles_procrustes(df[first_key])
-                # add the body angles to the dataframe
-                df['body_angle'] = angles
-                df['body_x'] = centers[:, 0]
-                df['body_y'] = centers[:, 1]
-                # and save
+                
+                # Estimate fps from video if possible
+                import cv2
+                cap = cv2.VideoCapture(video_path)
+                fps = cap.get(cv2.CAP_PROP_FPS) if cap.isOpened() else 30.0
+                cap.release()
+                sampling_interval = 1.0 / fps if fps > 0 else 1/30.0
+                
+                print(f"[DLC Worker] Computing body angles with Kalman filter (fps={fps:.1f})...")
+                # Get body angles with Kalman filtering
+                body_centers, body_angles_raw, body_angles_filtered, body_velocities, body_params = \
+                    get_filtered_angles(df[first_key], 
+                                      sampling_interval=sampling_interval,
+                                      optimize_params=True,
+                                      max_time_constant_ms=100.0,
+                                      verbose=True)
+                
+                print(f"[DLC Worker] Computing head angles with Kalman filter...")
+                # Get head angles with Kalman filtering (faster response)
+                head_centers, head_angles_raw, head_angles_filtered, head_velocities, head_params = \
+                    get_filtered_angles(df[first_key],
+                                      parts=['neck', 'antenna_left', 'antenna_right', 'head_left', 'head_right'],
+                                      top_anchor=['antenna_left', 'antenna_right'],
+                                      bottom_anchor='neck',
+                                      sampling_interval=sampling_interval,
+                                      optimize_params=True,
+                                      max_time_constant_ms=50.0,  # Head responds faster
+                                      verbose=True)
+                
+                # Add all angle data to dataframe
+                df['body_angle_raw'] = body_angles_raw
+                df['body_x'] = body_centers[:, 0]
+                df['body_y'] = body_centers[:, 1]
+                
+                if body_angles_filtered is not None:
+                    df['body_angle_filtered'] = body_angles_filtered
+                    df['body_angular_velocity'] = body_velocities
+                
+                df['head_angle_raw'] = head_angles_raw
+                df['head_x'] = head_centers[:, 0]
+                df['head_y'] = head_centers[:, 1]
+                
+                if head_angles_filtered is not None:
+                    df['head_angle_filtered'] = head_angles_filtered
+                    df['head_angular_velocity'] = head_velocities
+                
+                # Save filter parameters as attributes (if using HDF5 format that supports this)
                 df.to_hdf(h5_file, key='df', mode='w')
-                print(f"[DLC Worker] Angles for {video_path}: {angles}")
+                
+                print(f"[DLC Worker] Saved angles (raw + filtered) to {h5_file}")
+                if body_params:
+                    print(f"[DLC Worker] Body filter: damping={body_params['damping_coefficient']:.2f} Hz")
+                if head_params:
+                    print(f"[DLC Worker] Head filter: damping={head_params['damping_coefficient']:.2f} Hz")
         sys.exit(0)
     except Exception as e:
         print(f"[DLC Worker] ERROR: {e}", file=sys.stderr)
