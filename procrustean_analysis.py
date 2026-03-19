@@ -292,14 +292,14 @@ class AngularKalmanFilter():
         return log_likelihood
     
     @staticmethod
-    def optimize_parameters(angles_deg, sampling_interval, 
+    def optimize_parameters(angles_deg, fps, 
                            damping_bounds=(0.0, 50.0),
                            measurement_noise_bounds=(0.5, 20.0),
                            process_noise_bounds=(0.1, 10.0),
                            verbose=False):
         def negative_log_likelihood(params):
             damping, meas_noise, proc_noise = params
-            kf = AngularKalmanFilter(damping, sampling_interval, meas_noise, proc_noise)
+            kf = AngularKalmanFilter(damping, fps, meas_noise, proc_noise)
             return -kf.compute_log_likelihood(angles_deg)
         
         x0 = [(damping_bounds[0] + damping_bounds[1]) / 2,
@@ -329,7 +329,7 @@ class AngularKalmanFilter():
 
 
 def get_filtered_angles(data, parts=body_parts, top_anchor='neck', bottom_anchor='tail_joint',
-                       fps=30.0, optimize_params=True,
+                       fps=60.0, optimize_params=True,
                        damping_coefficient=None, measurement_noise_deg=None, process_noise_scale=None,
                        max_time_constant_ms=100.0, verbose=False):
     """
@@ -344,7 +344,7 @@ def get_filtered_angles(data, parts=body_parts, top_anchor='neck', bottom_anchor
     top_anchor, bottom_anchor : str or list
         Anchor points for orientation
     fps : float
-        Video framerate in frames per second (default: 30.0)
+        Video framerate in frames per second (default: 60.0)
     optimize_params : bool
         If True, automatically optimize Kalman filter parameters
     damping_coefficient : float or None
@@ -395,7 +395,7 @@ def get_filtered_angles(data, parts=body_parts, top_anchor='neck', bottom_anchor
             
             filter_params = AngularKalmanFilter.optimize_parameters(
                 angles_raw_deg,
-                sampling_interval,
+                fps,
                 damping_bounds=(min_damping, max_damping),
                 measurement_noise_bounds=(0.5, 20.0),
                 process_noise_bounds=(0.1, 10.0),
@@ -415,7 +415,7 @@ def get_filtered_angles(data, parts=body_parts, top_anchor='neck', bottom_anchor
                            'process_noise_scale': proc_noise}
         
         # Apply filter
-        kf = AngularKalmanFilter(damping, sampling_interval, meas_noise, proc_noise)
+        kf = AngularKalmanFilter(damping, fps, meas_noise, proc_noise)
         angles_filtered_deg, velocities_deg = kf.filter_sequence(angles_raw_deg)
         
         # Convert back to radians
@@ -429,7 +429,7 @@ def get_filtered_angles(data, parts=body_parts, top_anchor='neck', bottom_anchor
     else:
         return centers, angles_raw, None, None, None
 
-def process_tracking_file(h5_path, fps=30.0, optimize=True, 
+def process_tracking_file(h5_path, fps=60.0, optimize=True, 
                          body_damping=None, head_damping=None,
                          measurement_noise=None, process_noise=None,
                          body_max_tc_ms=100.0, head_max_tc_ms=50.0,
@@ -482,7 +482,7 @@ def process_tracking_file(h5_path, fps=30.0, optimize=True,
     
     body_centers, body_raw, body_filt, body_vel, body_params = get_filtered_angles(
         df[first_key],
-        sampling_interval=sampling_interval,
+        fps=fps,
         optimize_params=optimize,
         damping_coefficient=body_damping,
         measurement_noise_deg=measurement_noise,
@@ -500,7 +500,7 @@ def process_tracking_file(h5_path, fps=30.0, optimize=True,
         parts=['neck', 'antenna_left', 'antenna_right', 'head_left', 'head_right'],
         top_anchor=['antenna_left', 'antenna_right'],
         bottom_anchor='neck',
-        sampling_interval=sampling_interval,
+        fps=fps,
         optimize_params=optimize,
         damping_coefficient=head_damping,
         measurement_noise_deg=measurement_noise,
