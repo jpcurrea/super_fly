@@ -8,13 +8,120 @@ import yaml
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, 
     QTableWidget, QTableWidgetItem, QHeaderView, QFrame, QSizePolicy, QProgressBar, 
-    QFileDialog
+    QFileDialog, QDialog, QComboBox, QLineEdit, QMessageBox, QGridLayout, QCheckBox
 )
 from PyQt6.QtCore import Qt
 from video import Video
 import glob
 import pprint
 import napari
+
+class ExportModelDialog(QDialog):
+    """Dialog for exporting a DLC model with various options."""
+    
+    def __init__(self, config_path, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Export DLC Model")
+        self.config_path = config_path
+        self._init_ui()
+        self.resize(550, 500)
+    
+    def _init_ui(self):
+        layout = QGridLayout()
+        row = 0
+        
+        # Shuffle
+        layout.addWidget(QLabel("Shuffle:"), row, 0)
+        self.shuffle_input = QLineEdit()
+        self.shuffle_input.setText("1")
+        self.shuffle_input.setToolTip("The shuffle of the model to export (default: 1)")
+        layout.addWidget(self.shuffle_input, row, 1)
+        row += 1
+        
+        # Training Set Index
+        layout.addWidget(QLabel("Training Set Index:"), row, 0)
+        self.trainingsetindex_input = QLineEdit()
+        self.trainingsetindex_input.setText("0")
+        self.trainingsetindex_input.setToolTip("The index of the training fraction (default: 0)")
+        layout.addWidget(self.trainingsetindex_input, row, 1)
+        row += 1
+        
+        # Snapshot Index
+        layout.addWidget(QLabel("Snapshot Index:"), row, 0)
+        self.snapshotindex_input = QLineEdit()
+        self.snapshotindex_input.setPlaceholderText("Leave empty for config.yaml default, or use -1 for latest")
+        self.snapshotindex_input.setToolTip("The snapshot index for the weights. Use -1 for latest snapshot.")
+        layout.addWidget(self.snapshotindex_input, row, 1)
+        row += 1
+        
+        # Iteration
+        layout.addWidget(QLabel("Iteration:"), row, 0)
+        self.iteration_input = QLineEdit()
+        self.iteration_input.setPlaceholderText("Leave empty to use config.yaml default")
+        self.iteration_input.setToolTip("The model iteration (active learning loop) to export")
+        layout.addWidget(self.iteration_input, row, 1)
+        row += 1
+        
+        # TFGPUinference checkbox
+        self.tfgpu_checkbox = QCheckBox("Use TensorFlow GPU Inference")
+        self.tfgpu_checkbox.setChecked(True)
+        self.tfgpu_checkbox.setToolTip("Use the TensorFlow inference model. For DeepLabCut-live, set to False.")
+        layout.addWidget(self.tfgpu_checkbox, row, 0, 1, 2)
+        row += 1
+        
+        # Overwrite checkbox
+        self.overwrite_checkbox = QCheckBox("Overwrite Existing Export")
+        self.overwrite_checkbox.setChecked(False)
+        layout.addWidget(self.overwrite_checkbox, row, 0, 1, 2)
+        row += 1
+        
+        # Make tar checkbox
+        self.make_tar_checkbox = QCheckBox("Compress to TAR File")
+        self.make_tar_checkbox.setChecked(True)
+        self.make_tar_checkbox.setToolTip("Compress the exported directory to a tar file (required for model zoo)")
+        layout.addWidget(self.make_tar_checkbox, row, 0, 1, 2)
+        row += 1
+        
+        # Wipe paths checkbox
+        self.wipepaths_checkbox = QCheckBox("Remove Project Paths from Config")
+        self.wipepaths_checkbox.setChecked(False)
+        self.wipepaths_checkbox.setToolTip("Removes the actual path of your project and init_weights from pose_cfg")
+        layout.addWidget(self.wipepaths_checkbox, row, 0, 1, 2)
+        row += 1
+        
+        # Without detector checkbox
+        self.without_detector_checkbox = QCheckBox("Export Without Detector (PyTorch only)")
+        self.without_detector_checkbox.setChecked(False)
+        self.without_detector_checkbox.setToolTip("PyTorch engine only. Exports top-down models without the detector.")
+        layout.addWidget(self.without_detector_checkbox, row, 0, 1, 2)
+        row += 1
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        export_btn = QPushButton("Export")
+        export_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(export_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout, row, 0, 1, 2)
+        
+        self.setLayout(layout)
+    
+    def get_options(self):
+        """Return the selected export options."""
+        options = {
+            'shuffle': int(self.shuffle_input.text()) if self.shuffle_input.text() else 1,
+            'trainingsetindex': int(self.trainingsetindex_input.text()) if self.trainingsetindex_input.text() else 0,
+            'snapshotindex': int(self.snapshotindex_input.text()) if self.snapshotindex_input.text() else None,
+            'iteration': int(self.iteration_input.text()) if self.iteration_input.text() else None,
+            'TFGPUinference': self.tfgpu_checkbox.isChecked(),
+            'overwrite': self.overwrite_checkbox.isChecked(),
+            'make_tar': self.make_tar_checkbox.isChecked(),
+            'wipepaths': self.wipepaths_checkbox.isChecked(),
+            'without_detector': self.without_detector_checkbox.isChecked()
+        }
+        return options
 
 class TrainDLCGui(QWidget):
     def __init__(self, config_path):
@@ -65,6 +172,10 @@ class TrainDLCGui(QWidget):
         self.train_btn = QPushButton("Train")
         self.train_btn.clicked.connect(self.train_network)
         left_col.addWidget(self.train_btn)
+
+        self.export_model_btn = QPushButton("Export Model")
+        self.export_model_btn.clicked.connect(self.export_model)
+        left_col.addWidget(self.export_model_btn)
 
         self.track_btn = QPushButton("Track")
         self.track_btn.clicked.connect(self.track_files)
@@ -194,6 +305,39 @@ class TrainDLCGui(QWidget):
         deeplabcut.evaluate_network(self.config_path)
         # todo: print the evaluation results
         self.notification_label.setText("Training and evaluation complete.")
+
+    def export_model(self):
+        """Open export model dialog and execute export."""
+        dialog = ExportModelDialog(self.config_path, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            options = dialog.get_options()
+            self._execute_export(options)
+    
+    def _execute_export(self, options):
+        """Execute the model export with the provided options."""
+        try:
+            self.notification_label.setText("Exporting model...")
+            self.set_progress(0)
+            
+            # Call export_model with all the provided options
+            deeplabcut.export_model(
+                self.config_path,
+                shuffle=options.get('shuffle', 1),
+                trainingsetindex=options.get('trainingsetindex', 0),
+                snapshotindex=options.get('snapshotindex'),
+                iteration=options.get('iteration'),
+                TFGPUinference=options.get('TFGPUinference', True),
+                overwrite=options.get('overwrite', False),
+                make_tar=options.get('make_tar', True),
+                wipepaths=options.get('wipepaths', False),
+                without_detector=options.get('without_detector', False)
+            )
+            
+            self.set_progress(100)
+            self.notification_label.setText("Model exported successfully!")
+        except Exception as e:
+            self.notification_label.setText(f"Export failed: {str(e)}")
+            QMessageBox.critical(self, "Export Error", f"Failed to export model:\n{str(e)}")
 
     def track_files(self):
         # Example: run DLCProcessWorker for all videos in config

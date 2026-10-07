@@ -297,6 +297,7 @@ class MainWindow(QWidget):
         """Launch the Train DLC Model GUI as a subprocess (placeholder)."""
         import subprocess, sys
         if self.config_path:
+            breakpoint
             subprocess.Popen([sys.executable, 'train_dlc_gui.py', self.config_path])
         else:
             from PyQt6.QtWidgets import QMessageBox

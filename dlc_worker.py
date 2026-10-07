@@ -131,7 +131,7 @@ def main():
                 # Get body angles with Kalman filtering
                 body_centers, body_angles_raw, body_angles_filtered, body_velocities, body_params = \
                     get_filtered_angles(df[first_key], 
-                                      sampling_interval=sampling_interval,
+                                      fps=fps,
                                       optimize_params=True,
                                       max_time_constant_ms=100.0,
                                       verbose=True)
@@ -143,7 +143,7 @@ def main():
                                       parts=['neck', 'antenna_left', 'antenna_right', 'head_left', 'head_right'],
                                       top_anchor=['antenna_left', 'antenna_right'],
                                       bottom_anchor='neck',
-                                      sampling_interval=sampling_interval,
+                                      fps=fps,
                                       optimize_params=True,
                                       max_time_constant_ms=50.0,  # Head responds faster
                                       verbose=True)
