@@ -98,7 +98,7 @@ On Windows you can also use `dlc_gui.bat` (edit the Python path inside to match 
 If you use this software, the dataset, or the resulting model weights in your research, please cite:
 
 ```bibtex
-@dataset{superfly_dlc_magno_tracking,
+@dataset{superfly,
   author    = {Currea, John Paul},
   title     = {DeepLabCut Behavior Tracking: A Living Community Dataset},
   year      = {2026},
